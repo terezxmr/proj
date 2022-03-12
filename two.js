@@ -4,7 +4,7 @@
     <p id="hello hithub & NOSANA"></p>
 
     <script>
-      document.getElementById("hello").innerHTML = "Hello, world!";
+      document.getElementById("hello").innerHTML = "hello hithub & NOSANA";
     </script>
   </body>
 </html>
