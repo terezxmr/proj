@@ -1,0 +1,86 @@
+import { Injectable } from '@angular/core';
+import { Observable, throwError, of } from 'rxjs';
+import { catchError, pluck, publishReplay, refCount, map } from 'rxjs/operators';
+import { HttpClient } from '@angular/common/http';
+
+import { unitSystems } from 'src/app/constants';
+
+import { NotificationsService } from '../notifications-service/notifications.service';
+import { Config, ConfigService } from '../config/config.service';
+import { NotificationSettingsResponse, UnitSettingsResponse } from './settings.types';
+
+@Injectable({
+  providedIn: 'root',
+})
+export class SettingsService {
+  private readonly apiUrl: string;
+  private readonly config: Readonly<Config>;
+  private readonly subscriptionUrl: string;
+  private readonly unitsUrl: string;
+  public unitSystemCache: Observable<string>;
+
+  constructor(
+    configService: ConfigService,
+    private readonly notificationsService: NotificationsService,
+    private readonly http: HttpClient,
+  ) {
+    this.config = configService.get();
+    this.apiUrl = `${this.config.serviceUrl}/notification/v1`;
+    this.subscriptionUrl = `${this.apiUrl}/subscription`;
+    this.unitsUrl = `${this.apiUrl}/units`;
+  }
+
+  public getUserSubscription(): Observable<string[]> {
+    return this.http.get<NotificationSettingsResponse>(this.subscriptionUrl).pipe(
+      pluck('subscriptions'),
+      catchError(error => {
+        this.notificationsService.error('Failed to retrieve notification settings.');
+        return throwError(error);
+      }),
+    );
+  }
+
+  public updateUserSubscriptions(subscriptions: readonly string[]): Observable<string[]> {
+    const body = { subscriptions };
+    return this.http.put<NotificationSettingsResponse>(this.subscriptionUrl, body).pipe(
+      pluck('subscriptions'),
+      catchError(error => {
+        this.notificationsService.error('Failed to update notification settings.');
+        return throwError(error);
+      }),
+    );
+  }
+
+  public updateUnitSystem(unitSystem: string): Observable<string> {
+    const body = { unitSystem };
+    this.unitSystemCache = this.http.put<UnitSettingsResponse>(this.unitsUrl, body).pipe(
+      pluck('unitSystem'),
+      publishReplay(1),
+      refCount(),
+      catchError(error => {
+        this.notificationsService.error('Failed to update unit settings.');
+        return throwError(error);
+      }),
+    );
+    return this.unitSystemCache;
+  }
+
+  public getUnitSystem(showNotification = false): Observable<string> {
+    if (this.unitSystemCache) {
+      return this.unitSystemCache;
+    }
+    this.unitSystemCache = this.http.get<UnitSettingsResponse>(this.unitsUrl).pipe(
+      pluck('unitSystem'),
+      map(unitSystem => unitSystem ?? unitSystems.canonical),
+      publishReplay(1),
+      refCount(),
+      catchError(() => {
+        if (showNotification) {
+          this.notificationsService.error('Failed to get unit settings.');
+        }
+        return of(unitSystems.canonical);
+      }),
+    );
+    return this.unitSystemCache;
+  }
+}
